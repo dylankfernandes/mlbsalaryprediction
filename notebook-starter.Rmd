@@ -1,0 +1,17 @@
+---
+title: "Predicting MLB Player Salary"
+output: html_notebook
+---
+
+## Setup
+
+Installing required packages
+```{r}
+library('Lahman')
+library('tidyverse')
+library('ggplot2')
+```
+
+```{r}
+head(Salaries)
+```
