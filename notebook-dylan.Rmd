@@ -1,0 +1,164 @@
+---
+title: "DS 3002 Project 2"
+output: html_notebook
+---
+
+```{r include=FALSE}
+library('Lahman')
+library('tidyverse')
+library('ggplot2')
+library('priceR')
+```
+
+```{r}
+slries <- Salaries %>% filter(yearID >= 1985)
+btting <- Batting %>% filter(yearID >= 1985)
+```
+
+# Salary EDA
+
+```{r}
+slries
+```
+
+```{r}
+slries %>% ggplot(aes(x=salary)) + geom_histogram()
+```
+
+```{r}
+slries %>% group_by(yearID) %>% summarise_at(vars(salary), mean) %>% ggplot(aes(x=yearID, y=salary)) + geom_line()
+```
+
+# Batting EDA
+
+```{r}
+head(btting)
+```
+
+```{r}
+btting %>% group_by(yearID) %>% summarize(count = n()) 
+```
+
+```{r}
+btting %>% 
+  group_by(yearID) %>% 
+  summarize(count = n()) %>% 
+  ggplot(aes(x=yearID, y=count)) + geom_line()
+```
+  
+```{r}
+ggplot(btting, aes(x=AB)) + geom_histogram(binwidth=40)
+```
+
+# Adjusting for Inflation + Normalization
+
+```{r}
+start_year = 1985
+end_year = 2020
+
+prices <- rep(1, end_year - start_year + 1)
+names(prices) <- c(start_year:end_year)
+
+for (year in start_year:end_year){
+  prices[names(prices)[year - start_year + 1]] <- adjust_for_inflation(1, from_date = year, "US", to_date = end_year)
+}
+
+prices
+```
+
+
+```{r}
+standardize_price <- function(year, salary) {
+  prices[names(prices)[year - start_year + 1]] * salary
+}
+
+standardize_price(1988, 1000)
+```
+
+```{r}
+slries <- slries %>% mutate(adjustedSalary=standardize_price(yearID, salary))
+head(slries)
+```
+
+# Teams EDA
+
+```{r}
+slries %>% select(teamID) %>% distinct()
+```
+
+```{r}
+# MON = WAS, ML4 = MIL, FLO = MIA, CAL = LAA
+levels(slries$teamID) <- sub("MON", "WAS", levels(slries$teamID))
+levels(slries$teamID) <- sub("ANA", "LAA", levels(slries$teamID))
+levels(slries$teamID) <- sub("ML4", "MIL", levels(slries$teamID))
+levels(slries$teamID) <- sub("FLO", "MIA", levels(slries$teamID))
+levels(slries$teamID) <- sub("CAL", "LAA", levels(slries$teamID))
+```
+
+```{r}
+slries %>% select(teamID) %>% distinct()
+```
+
+```{r}
+slries %>% 
+  group_by(yearID, teamID) %>% 
+  summarize(count=n(), sum=sum(adjustedSalary)) %>% 
+  mutate(salary_per_player=sum/count) %>% 
+  ggplot(aes(x=yearID, y=salary_per_player, group=teamID, color=teamID)) + geom_line()
+```
+
+
+```{r}
+slries %>% 
+  group_by(yearID, teamID) %>%
+  summarise_at(vars(adjustedSalary), sum) %>% 
+  ggplot(aes(x=adjustedSalary)) + geom_histogram()
+```
+
+```{r}
+slries %>% 
+  group_by(yearID, teamID) %>% 
+  summarise_at(vars(adjustedSalary), sum) %>% 
+  ggplot(aes(x=adjustedSalary)) + geom_histogram()
+```
+
+```{r}
+slries %>% ggplot(aes(x=adjustedSalary)) + geom_histogram() + facet_wrap(~teamID)
+```
+
+```{r}
+slries <- slries %>% mutate(normalizedSalary=scale(adjustedSalary))
+```
+
+```{r}
+slries %>% filter(normalizedSalary > 0) %>% ggplot(aes(x=normalizedSalary)) + geom_histogram() + facet_wrap(~teamID)
+```
+
+# Joining Datasets
+```{r}
+batting_total <- btting %>% inner_join(battingStats())
+head(batting_total)
+```
+
+```{r}
+awards_per_year <- AwardsPlayers %>% group_by(playerID, yearID) %>% count(name="awards")
+awards_per_year
+```
+
+```{r}
+awards_and_batting <- batting_total %>% left_join(awards_per_year)
+```
+```{r}
+all_star_player_games <- AllstarFull %>% group_by(playerID) %>% count(name="all_star_games")
+all_star_player_games
+```
+
+```{r}
+awards_asg_batting <- awards_and_batting %>% left_join(all_star_player_games)
+awards_asg_batting
+```
+
+```{r}
+awards_asg_batting_app <- awards_asg_batting %>% left_join(Appearances %>% select(yearID, playerID, G_batting, GS)) 
+awards_asg_batting_app
+```
