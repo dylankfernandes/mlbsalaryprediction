@@ -8,6 +8,9 @@ library('Lahman')
 library('tidyverse')
 library('ggplot2')
 library('priceR')
+library('superml')
+# library('caTools')
+# library('MASS')
 ```
 
 ```{r}
@@ -83,20 +86,12 @@ head(slries)
 # Teams EDA
 
 ```{r}
-slries %>% select(teamID) %>% distinct()
-```
-
-```{r}
 # MON = WAS, ML4 = MIL, FLO = MIA, CAL = LAA
 levels(slries$teamID) <- sub("MON", "WAS", levels(slries$teamID))
 levels(slries$teamID) <- sub("ANA", "LAA", levels(slries$teamID))
 levels(slries$teamID) <- sub("ML4", "MIL", levels(slries$teamID))
 levels(slries$teamID) <- sub("FLO", "MIA", levels(slries$teamID))
 levels(slries$teamID) <- sub("CAL", "LAA", levels(slries$teamID))
-```
-
-```{r}
-slries %>% select(teamID) %>% distinct()
 ```
 
 ```{r}
@@ -159,6 +154,84 @@ awards_asg_batting
 ```
 
 ```{r}
-awards_asg_batting_app <- awards_asg_batting %>% left_join(Appearances %>% select(yearID, playerID, G_batting, GS)) 
-awards_asg_batting_app
+awards_asg_batting_app <- awards_asg_batting %>% left_join(Appearances %>% select(yearID, lgID, playerID, GS))
+```
+
+```{r}
+awards_asg_batting_app %>% filter(G > 0 & AB > 0)
+```
+
+```{r}
+awards_asg_batting_app_slries <- awards_asg_batting_app %>% inner_join(slries)
+awards_asg_batting_app_slries <- awards_asg_batting_app_slries %>% select(-IBB, -HBP, -GIDP, -CS, -stint, -PA, -SF, -SH, -adjustedSalary, -normalizedSalary, -playerID, -teamID, -lgID)
+```
+
+```{r}
+awards_asg_batting_app_slries <- awards_asg_batting_app_slries %>% filter_at(vars(BA, OBP, OPS, SlugPct), all_vars(!is.na(.)))
+
+```
+
+```{r}
+awards_asg_batting_app_slries$awards[is.na(awards_asg_batting_app_slries$awards)] <- 0
+```
+
+```{r}
+awards_asg_batting_app_slries$all_star_games[is.na(awards_asg_batting_app_slries$all_star_games)] <- 0
+```
+
+```{r}
+df <- awards_asg_batting_app_slries
+df
+```
+
+# Feature Engineering
+
+```{r}
+library('caTools')
+library('MASS')
+```
+
+
+```{r}
+split = sample.split(df$salary, SplitRatio = 0.80)
+training_set = subset(df, split == TRUE)
+test_set = subset(df, split == FALSE)
+```
+
+```{r}
+training_set
+```
+
+# Training Model
+```{r}
+
+regressor = lm(formula = salary~.,data = training_set)
+
+# predict test set results
+y_pred = predict(regressor, newdata = test_set)
+
+summary(regressor)
+
+#  training set
+install.packages('ggplot2')
+library(ggplot2)
+ggplot() +
+  geom_point(aes(x = training_set$AllstarFull, y = training_set$salary),
+             colour = 'blue') +
+  geom_line(aes(x = training_set$AllstarFull, y = predict(regressor, newdata = training_set)),
+            colour = 'red') +
+  ggtitle('All star Full v/s Salary (in USD) (Training set)') +
+  xlab('AllstarFull') +
+  ylab('Salary (in USD)')
+
+#test results
+library(ggplot2)
+ggplot() +
+  geom_point(aes(x = test_set$AllstarFull., y = test_set$Salary),
+             colour = 'blue') +
+  geom_line(aes(x = training_set$AllstarFull, y = predict(regressor, newdata = training_set)),
+            colour = 'red') +
+  ggtitle('AllstarFull v/s Salary (Test set)') +
+  xlab('AllstarFull') +
+  ylab('Salary (in USD)')
 ```
