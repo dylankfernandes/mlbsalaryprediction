@@ -14,8 +14,8 @@ library('superml')
 ```
 
 ```{r}
-slries <- Salaries %>% filter(yearID >= 1985)
-btting <- Batting %>% filter(yearID >= 1985)
+slries <- Salaries %>% filter(yearID >= 1985, yearID <= 2016)
+btting <- Batting %>% filter(yearID >= 1985, yearID <= 2016)
 ```
 
 # Salary EDA
@@ -57,7 +57,7 @@ ggplot(btting, aes(x=AB)) + geom_histogram(binwidth=40)
 
 ```{r}
 start_year = 1985
-end_year = 2020
+end_year = 2016
 
 prices <- rep(1, end_year - start_year + 1)
 names(prices) <- c(start_year:end_year)
@@ -159,6 +159,7 @@ awards_asg_batting_app <- awards_asg_batting %>% left_join(Appearances %>% selec
 
 ```{r}
 awards_asg_batting_app %>% filter(G > 0 & AB > 0)
+tail(awards_asg_batting_app)
 ```
 
 ```{r}
@@ -180,11 +181,35 @@ awards_asg_batting_app_slries$all_star_games[is.na(awards_asg_batting_app_slries
 ```
 
 ```{r}
-df <- awards_asg_batting_app_slries
+df <- awards_asg_batting_app_slries %>% select(-TB, -SO, -OPS, -H, -AB, -BABIP)
+tail(df)
+```
+
+# Normalizing by Year
+```{r}
+salary_by_year <- slries %>% group_by(yearID) %>% summarise_at(vars(salary), mean)
+salary_by_year$yearID <- salary_by_year$yearID - 1984
+
+salary_regressor = lm(formula = salary~yearID, data = salary_by_year)
+intercept <- summary(salary_regressor)$coefficients["(Intercept)", "Estimate"]
+slope <- summary(salary_regressor)$coefficients["yearID", "Estimate"]
+summary(salary_regressor)
+```
+
+```{r}
+
+normalize_year <- function(salary, yearID) {
+  # (salary - intercept)/(slope) * yearID
+  # year_salary <- salary_by_year %>% filter(yearID == 16)
+  # salary - year_salary$salary
+  salary
+}
+
+df <- df %>% mutate(salary = normalize_year(salary, yearID))
 df
 ```
 
-# Feature Engineering
+# Feature Engineering and Model Training
 
 ```{r}
 library('caTools')
@@ -193,45 +218,22 @@ library('MASS')
 
 
 ```{r}
-split = sample.split(df$salary, SplitRatio = 0.80)
-training_set = subset(df, split == TRUE)
-test_set = subset(df, split == FALSE)
+# split = sample.split(df$salary, SplitRatio = 0.80)
+# training_set = subset(df, split == TRUE)
+# test_set = subset(df, split == FALSE)
+training_set = df %>% filter(yearID < 2016)
+test_set = df %>% filter(yearID == 2016)
 ```
 
 ```{r}
-training_set
+head(test_set)
 ```
+
+
 
 # Training Model
 ```{r}
-
 regressor = lm(formula = salary~.,data = training_set)
-
-# predict test set results
 y_pred = predict(regressor, newdata = test_set)
-
 summary(regressor)
-
-#  training set
-install.packages('ggplot2')
-library(ggplot2)
-ggplot() +
-  geom_point(aes(x = training_set$AllstarFull, y = training_set$salary),
-             colour = 'blue') +
-  geom_line(aes(x = training_set$AllstarFull, y = predict(regressor, newdata = training_set)),
-            colour = 'red') +
-  ggtitle('All star Full v/s Salary (in USD) (Training set)') +
-  xlab('AllstarFull') +
-  ylab('Salary (in USD)')
-
-#test results
-library(ggplot2)
-ggplot() +
-  geom_point(aes(x = test_set$AllstarFull., y = test_set$Salary),
-             colour = 'blue') +
-  geom_line(aes(x = training_set$AllstarFull, y = predict(regressor, newdata = training_set)),
-            colour = 'red') +
-  ggtitle('AllstarFull v/s Salary (Test set)') +
-  xlab('AllstarFull') +
-  ylab('Salary (in USD)')
 ```
