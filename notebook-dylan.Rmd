@@ -9,6 +9,8 @@ library('tidyverse')
 library('ggplot2')
 library('priceR')
 library('superml')
+library('scales')
+library('caret')
 # library('caTools')
 # library('MASS')
 ```
@@ -26,10 +28,11 @@ slries
 
 ```{r}
 slries %>% ggplot(aes(x=salary)) + geom_histogram()
+
 ```
 
 ```{r}
-slries %>% group_by(yearID) %>% summarise_at(vars(salary), mean) %>% ggplot(aes(x=yearID, y=salary)) + geom_line()
+slries %>% group_by(yearID) %>% summarise_at(vars(salary), mean) %>% ggplot(aes(x=yearID, y=salary)) + geom_line() + ggtitle("Average Salary of Baseball Players from 1985 to 2016") + xlab("Year") + ylab("Average Annual Salary") + scale_y_continuous(labels=scales::dollar_format())
 ```
 
 # Batting EDA
@@ -46,7 +49,7 @@ btting %>% group_by(yearID) %>% summarize(count = n())
 btting %>% 
   group_by(yearID) %>% 
   summarize(count = n()) %>% 
-  ggplot(aes(x=yearID, y=count)) + geom_line()
+  ggplot(aes(x=yearID, y=count)) + geom_line() + ggtitle("MLB Player Counts from 1985 to 2016") + xlab("Year") + ylab("Number of Players")
 ```
   
 ```{r}
@@ -99,7 +102,7 @@ slries %>%
   group_by(yearID, teamID) %>% 
   summarize(count=n(), sum=sum(adjustedSalary)) %>% 
   mutate(salary_per_player=sum/count) %>% 
-  ggplot(aes(x=yearID, y=salary_per_player, group=teamID, color=teamID)) + geom_line()
+  ggplot(aes(x=yearID, y=salary_per_player, group=teamID, color=teamID)) + geom_line() + ggtitle("Average Salary per Player per Team from 1985 to 2016") + xlab("Year") + ylab("Average Annual Salary") + scale_y_continuous(labels=scales::dollar_format())
 ```
 
 
@@ -115,6 +118,10 @@ slries %>%
   group_by(yearID, teamID) %>% 
   summarise_at(vars(adjustedSalary), sum) %>% 
   ggplot(aes(x=adjustedSalary)) + geom_histogram()
+```
+
+```{r}
+slries %>% group_by(yearID) %>% summarise_at(vars(adjustedSalary), mean) %>% ggplot(aes(x=yearID, y=adjustedSalary)) + geom_line() + ggtitle("Average Adjusted Salary of Baseball Players from 1985 to 2016") + xlab("Year") + ylab("Average Annual Adjusted Salary") + scale_y_continuous(labels=scales::dollar_format())
 ```
 
 ```{r}
@@ -164,7 +171,7 @@ tail(awards_asg_batting_app)
 
 ```{r}
 awards_asg_batting_app_slries <- awards_asg_batting_app %>% inner_join(slries)
-awards_asg_batting_app_slries <- awards_asg_batting_app_slries %>% select(-IBB, -HBP, -GIDP, -CS, -stint, -PA, -SF, -SH, -adjustedSalary, -normalizedSalary, -playerID, -teamID, -lgID)
+awards_asg_batting_app_slries <- awards_asg_batting_app_slries %>% select(-IBB, -HBP, -GIDP, -CS, -stint, -PA, -SF, -SH, -salary, -normalizedSalary, -teamID, -lgID)
 ```
 
 ```{r}
@@ -182,40 +189,28 @@ awards_asg_batting_app_slries$all_star_games[is.na(awards_asg_batting_app_slries
 
 ```{r}
 df <- awards_asg_batting_app_slries %>% select(-TB, -SO, -OPS, -H, -AB, -BABIP)
+df_with_player_id <- df
+df <- df %>% select(-playerID)
 tail(df)
 ```
 
 # Normalizing by Year
 ```{r}
-salary_by_year <- slries %>% group_by(yearID) %>% summarise_at(vars(salary), mean)
+salary_by_year <- slries %>% group_by(yearID) %>% summarise_at(vars(adjustedSalary), mean)
 salary_by_year$yearID <- salary_by_year$yearID - 1984
 
-salary_regressor = lm(formula = salary~yearID, data = salary_by_year)
+salary_regressor = lm(formula = adjustedSalary~yearID, data = salary_by_year)
 intercept <- summary(salary_regressor)$coefficients["(Intercept)", "Estimate"]
 slope <- summary(salary_regressor)$coefficients["yearID", "Estimate"]
 summary(salary_regressor)
 ```
 
-```{r}
-
-normalize_year <- function(salary, yearID) {
-  # (salary - intercept)/(slope) * yearID
-  # year_salary <- salary_by_year %>% filter(yearID == 16)
-  # salary - year_salary$salary
-  salary
-}
-
-df <- df %>% mutate(salary = normalize_year(salary, yearID))
-df
-```
-
 # Feature Engineering and Model Training
 
 ```{r}
-library('caTools')
-library('MASS')
+df <- df %>% mutate_at(c("G", "R", "X2B", "X3B", "HR", "RBI", "SB", "BB", "BA", "GS"), scale)
+head(df)
 ```
-
 
 ```{r}
 # split = sample.split(df$salary, SplitRatio = 0.80)
@@ -230,10 +225,27 @@ head(test_set)
 ```
 
 
-
 # Training Model
-```{r}
-regressor = lm(formula = salary~.,data = training_set)
+```{r eval=FALSE, include=FALSE}
+regressor = lm(formula = adjustedSalary~.,data = training_set)
 y_pred = predict(regressor, newdata = test_set)
 summary(regressor)
+```
+
+```{r}
+lm <- train(adjustedSalary ~ ., data = training_set, 
+                 method = "lm",
+                 ## This last option is actually one
+                 ## for gbm() that passes through
+                 verbose = FALSE)
+lm
+```
+
+```{r}
+brnn <- train(adjustedSalary ~ ., data = training_set, 
+                 method = "brnn",
+                 ## This last option is actually one
+                 ## for gbm() that passes through
+                 verbose = FALSE)
+brnn
 ```
