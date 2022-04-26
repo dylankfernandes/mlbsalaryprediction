@@ -1,0 +1,300 @@
+---
+title: "DS 3002 Project 2"
+output: html_notebook
+---
+
+```{r include=FALSE}
+library('Lahman')
+library('tidyverse')
+library('ggplot2')
+library('priceR')
+library('superml')
+library('scales')
+library('caret')
+# library('caTools')
+# library('MASS')
+```
+
+```{r}
+slries <- Salaries %>% filter(yearID >= 1985, yearID <= 2016)
+btting <- Batting %>% filter(yearID >= 1985, yearID <= 2016)
+```
+
+# Salary EDA
+
+```{r}
+slries
+```
+
+```{r}
+slries %>% ggplot(aes(x=salary)) + geom_histogram()
+```
+
+```{r}
+slries %>% group_by(yearID) %>% summarise_at(vars(salary), mean) %>% ggplot(aes(x=yearID, y=salary)) + geom_line() + ggtitle("Average Salary of Baseball Players from 1985 to 2016") + xlab("Year") + ylab("Average Annual Salary") + scale_y_continuous(labels=scales::dollar_format())
+```
+
+# Batting EDA
+
+```{r}
+head(btting)
+```
+
+```{r}
+btting %>% group_by(yearID) %>% summarize(count = n()) 
+```
+
+```{r}
+btting %>% 
+  group_by(yearID) %>% 
+  summarize(count = n()) %>% 
+  ggplot(aes(x=yearID, y=count)) + geom_line() + ggtitle("MLB Player Counts from 1985 to 2016") + xlab("Year") + ylab("Number of Players")
+```
+  
+```{r}
+ggplot(btting, aes(x=AB)) + geom_histogram(binwidth=40)
+```
+
+# Adjusting for Inflation + Normalization
+
+```{r}
+start_year = 1985
+end_year = 2016
+prices <- rep(1, end_year - start_year + 1)
+names(prices) <- c(start_year:end_year)
+for (year in start_year:end_year){
+  prices[names(prices)[year - start_year + 1]] <- adjust_for_inflation(1, from_date = year, "US", to_date = end_year)
+}
+prices
+```
+
+
+```{r}
+standardize_price <- function(year, salary) {
+  prices[names(prices)[year - start_year + 1]] * salary
+}
+standardize_price(1988, 1000)
+```
+
+```{r}
+slries <- slries %>% mutate(adjustedSalary=standardize_price(yearID, salary))
+head(slries)
+```
+
+# Teams EDA
+
+```{r}
+# MON = WAS, ML4 = MIL, FLO = MIA, CAL = LAA
+levels(slries$teamID) <- sub("MON", "WAS", levels(slries$teamID))
+levels(slries$teamID) <- sub("ANA", "LAA", levels(slries$teamID))
+levels(slries$teamID) <- sub("ML4", "MIL", levels(slries$teamID))
+levels(slries$teamID) <- sub("FLO", "MIA", levels(slries$teamID))
+levels(slries$teamID) <- sub("CAL", "LAA", levels(slries$teamID))
+```
+
+```{r}
+slries %>% 
+  group_by(yearID, teamID) %>% 
+  summarize(count=n(), sum=sum(adjustedSalary)) %>% 
+  mutate(salary_per_player=sum/count) %>% 
+  ggplot(aes(x=yearID, y=salary_per_player, group=teamID, color=teamID)) + geom_line() + ggtitle("Average Salary per Player per Team from 1985 to 2016") + xlab("Year") + ylab("Average Annual Salary") + scale_y_continuous(labels=scales::dollar_format())
+```
+
+
+```{r}
+slries %>% 
+  group_by(yearID, teamID) %>%
+  summarise_at(vars(adjustedSalary), sum) %>% 
+  ggplot(aes(x=adjustedSalary)) + geom_histogram()
+```
+
+```{r}
+slries %>% 
+  group_by(yearID, teamID) %>% 
+  summarise_at(vars(adjustedSalary), sum) %>% 
+  ggplot(aes(x=adjustedSalary)) + geom_histogram()
+```
+
+```{r}
+slries %>% group_by(yearID) %>% summarise_at(vars(adjustedSalary), mean) %>% ggplot(aes(x=yearID, y=adjustedSalary)) + geom_line() + ggtitle("Average Adjusted Salary of Baseball Players from 1985 to 2016") + xlab("Year") + ylab("Average Annual Adjusted Salary") + scale_y_continuous(labels=scales::dollar_format())
+```
+
+```{r}
+slries %>% ggplot(aes(x=adjustedSalary)) + geom_histogram() + facet_wrap(~teamID)
+```
+
+```{r}
+slries <- slries %>% mutate(normalizedSalary=scale(adjustedSalary))
+```
+
+```{r}
+slries %>% filter(normalizedSalary > 0) %>% ggplot(aes(x=normalizedSalary)) + geom_histogram() + facet_wrap(~teamID)
+```
+
+# Joining Datasets
+```{r}
+batting_total <- btting %>% inner_join(battingStats())
+head(batting_total)
+```
+
+```{r}
+awards_per_year <- AwardsPlayers %>% group_by(playerID, yearID) %>% count(name="awards")
+awards_per_year
+```
+
+```{r}
+awards_and_batting <- batting_total %>% left_join(awards_per_year)
+```
+```{r}
+all_star_player_games <- AllstarFull %>% group_by(playerID) %>% count(name="all_star_games")
+all_star_player_games
+```
+
+```{r}
+awards_asg_batting <- awards_and_batting %>% left_join(all_star_player_games)
+awards_asg_batting
+```
+
+```{r}
+awards_asg_batting_app <- awards_asg_batting %>% left_join(Appearances)
+```
+
+```{r}
+awards_asg_batting_app %>% filter(G > 0 & AB > 0)
+tail(awards_asg_batting_app)
+```
+
+```{r}
+awards_asg_batting_app_slries <- awards_asg_batting_app %>% inner_join(slries)
+awards_asg_batting_app_slries <- awards_asg_batting_app_slries %>% select(-IBB, -HBP, -GIDP, -CS, -stint, -PA, -SF, -SH, -salary, -normalizedSalary, -teamID, -lgID)
+```
+
+```{r}
+awards_asg_batting_app_slries <- awards_asg_batting_app_slries %>% filter_at(vars(BA, OBP, OPS, SlugPct), all_vars(!is.na(.)))
+```
+
+```{r}
+awards_asg_batting_app_slries$awards[is.na(awards_asg_batting_app_slries$awards)] <- 0
+```
+
+```{r}
+awards_asg_batting_app_slries$all_star_games[is.na(awards_asg_batting_app_slries$all_star_games)] <- 0
+```
+
+```{r}
+df <- awards_asg_batting_app_slries %>% select(-TB, -SO, -OPS, -H, -AB, -BABIP)
+df_with_player_id <- df
+df <- df %>% select(-playerID)
+tail(df)
+```
+
+# Normalizing by Year
+```{r}
+salary_by_year <- slries %>% group_by(yearID) %>% summarise_at(vars(adjustedSalary), mean)
+salary_by_year$yearID <- salary_by_year$yearID - 1984
+salary_regressor = lm(formula = adjustedSalary~yearID, data = salary_by_year)
+intercept <- summary(salary_regressor)$coefficients["(Intercept)", "Estimate"]
+slope <- summary(salary_regressor)$coefficients["yearID", "Estimate"]
+summary(salary_regressor)
+```
+
+# Feature Engineering and Model Training
+
+```{r}
+df <- df %>% mutate_at(c("G", "R", "X2B", "X3B", "HR", "RBI", "SB", "BB", "BA", "GS"), scale)
+tail(df)
+```
+
+```{r}
+# split = sample.split(df$salary, SplitRatio = 0.80)
+# training_set = subset(df, split == TRUE)
+# test_set = subset(df, split == FALSE)
+training_set = df %>% filter(yearID < 2016)
+test_set = df %>% filter(yearID == 2016)
+```
+
+```{r}
+head(test_set)
+```
+
+
+# Training Model
+```{r eval=FALSE, include=FALSE}
+regressor = lm(formula = adjustedSalary~.,data = training_set)
+y_pred = predict(regressor, newdata = test_set)
+summary(regressor)
+```
+
+```{r}
+lm <- train(adjustedSalary ~ ., data = training_set, 
+                 method = "lm",
+                 ## This last option is actually one
+                 ## for gbm() that passes through
+                 verbose = FALSE)
+lm
+```
+
+```{r}
+brnn <- train(adjustedSalary ~ ., data = training_set, 
+                 method = "brnn",
+                 ## This last option is actually one
+                 ## for gbm() that passes through
+                 verbose = FALSE)
+brnn
+```
+```{r}
+test_set$predicted.y = predict(brnn, newdata = test_set)
+cor(test_set$adjustedSalary,test_set$predicted.y)
+act_pred <- data.frame(cbind(actuals =test_set$adjustedSalary, predicteds= test_set$predicted.y ))
+head(test_set)
+df_with_player_id$ID= df_with_player_id$playerID
+df_with_player_id
+test = df_with_player_id[which(df_with_player_id$yearID == 2016),]
+traviswood = test[which(test$playerID == "woodtr01"),]
+traviswood
+testresult = test_set[which(test_set$adjustedSalary == 6170000),]
+
+```
+```{r}
+ranger <- train(adjustedSalary ~ ., data = training_set, 
+                 method = "ranger",
+                 ## This last option is actually one
+                 ## for gbm() that passes through
+                 verbose = FALSE)
+ranger
+```
+```{r}
+install.packages('ggplot2')
+library(ggplot2)
+test2 = df[which(df$yearID < 2016),]
+set.seed(1)
+ctrl <- trainControl(
+  method = "cv",
+  number = 10,
+)
+model3 <- train(
+  adjustedSalary ~ .,
+  data = training_set,
+  method = 'rpart2',
+  preProcess = c("center", "scale"),
+  trControl = ctrl
+)
+model3
+
+```
+```{r}
+lm <- train(adjustedSalary ~ ., data = training_set, 
+                 method = "lm",
+                 ## This last option is actually one
+                 ## for gbm() that passes through
+                 verbose = FALSE)
+
+test2.features = subset(test2, select=-c(adjustedSalary))
+test2.target = subset(test2, select=adjustedSalary)[,1]
+predictions = predict(lm, newdata = test2.features)
+
+# RMSE
+cor(test2.target, predictions)^2
+
+```
+
